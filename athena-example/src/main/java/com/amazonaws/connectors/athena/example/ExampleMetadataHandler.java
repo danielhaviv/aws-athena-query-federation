@@ -104,6 +104,7 @@ public class ExampleMetadataHandler
         logger.info("doListSchemaNames: enter - " + request);
 
         Set<String> schemas = new HashSet<>();
+        schemas.add("schema1");
 
         /**
          * TODO: Add schemas, example below
@@ -129,6 +130,7 @@ public class ExampleMetadataHandler
         logger.info("doListTables: enter - " + request);
 
         List<TableName> tables = new ArrayList<>();
+        tables.add(new TableName(request.getSchemaName(), "table1"));
 
         /**
          * TODO: Add tables for the requested schema, example below
@@ -157,7 +159,9 @@ public class ExampleMetadataHandler
         logger.info("doGetTable: enter - " + request);
 
         Set<String> partitionColNames = new HashSet<>();
-
+        partitionColNames.add("year");
+        partitionColNames.add("month");
+        partitionColNames.add("day");
         /**
          * TODO: Add partitions columns, example below.
          *
@@ -168,7 +172,26 @@ public class ExampleMetadataHandler
          */
 
         SchemaBuilder tableSchemaBuilder = SchemaBuilder.newBuilder();
-
+        tableSchemaBuilder.addIntField("year")
+                .addIntField("month")
+                .addIntField("day")
+                .addStringField("account_id")
+                .addStringField("encrypted_payload")
+                .addStructField("transaction")
+                .addChildField("transaction", "id", Types.MinorType.INT.getType())
+                .addChildField("transaction", "completed", Types.MinorType.BIT.getType())
+                //Metadata who's name matches a column name
+                //is interpreted as the description of that
+                //column when you run "show tables" queries.
+                .addMetadata("year", "The year that the payment took place in.")
+                .addMetadata("month", "The month that the payment took place in.")
+                .addMetadata("day", "The day that the payment took place in.")
+                .addMetadata("account_id", "The account_id used for this payment.")
+                .addMetadata("encrypted_payload", "A special encrypted payload.")
+                .addMetadata("transaction", "The payment transaction details.")
+                //This metadata field is for our own use, Athena will ignore and pass along fields it doesn't expect.
+                //we will use this later when we implement doGetTableLayout(...)
+                .addMetadata("partitionCols", "year,month,day");
         /**
          * TODO: Generate a schema for the requested table.
          *
@@ -222,6 +245,14 @@ public class ExampleMetadataHandler
                     final int yearVal = year;
                     final int monthVal = month;
                     final int dayVal = day;
+                    blockWriter.writeRows((Block block, int row) -> {
+                        boolean matched = true;
+                        matched &= block.setValue("year", row, yearVal);
+                        matched &= block.setValue("month", row, monthVal);
+                        matched &= block.setValue("day", row, dayVal);
+                        //If all fields matches then we wrote 1 row during this call so we return 1
+                        return matched ? 1 : 0;
+                    });
                     /**
                      * TODO: If the partition represented by this year,month,day offer the values to the block
                      * and check if they all passed constraints. The Block has been configured to automatically
@@ -292,7 +323,13 @@ public class ExampleMetadataHandler
              *
              */
         }
+        Split split = Split.newBuilder(makeSpillLocation(request), makeEncryptionKey())
+                .add("year", String.valueOf(year.readInteger()))
+                .add("month", String.valueOf(month.readInteger()))
+                .add("day", String.valueOf(day.readInteger()))
+                .build();
 
+        splits.add(split);
         logger.info("doGetSplits: exit - " + splits.size());
         return new GetSplitsResponse(catalogName, splits);
     }

@@ -116,7 +116,9 @@ public class ExampleRecordHandler
         int splitYear = 0;
         int splitMonth = 0;
         int splitDay = 0;
-
+        splitYear = split.getPropertyAsInt("year");
+        splitMonth = split.getPropertyAsInt("month");
+        splitDay = split.getPropertyAsInt("day");
         /**
          * TODO: Extract information about what we need to read from the split. If you are following the tutorial
          *  this is basically the partition column values for year, month, day.
@@ -170,6 +172,31 @@ public class ExampleRecordHandler
              value.value = ((String[]) context)[6];
          });
          */
+        builder.withExtractor("year", (IntExtractor) (Object context, NullableIntHolder value) -> {
+            value.isSet = 1;
+            value.value = Integer.parseInt(((String[]) context)[0]);
+        });
+
+        builder.withExtractor("month", (IntExtractor) (Object context, NullableIntHolder value) -> {
+            value.isSet = 1;
+            value.value = Integer.parseInt(((String[]) context)[1]);
+        });
+
+        builder.withExtractor("day", (IntExtractor) (Object context, NullableIntHolder value) -> {
+            value.isSet = 1;
+            value.value = Integer.parseInt(((String[]) context)[2]);
+        });
+
+        builder.withExtractor("encrypted_payload", (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
+            value.isSet = 1;
+            value.value = ((String[]) context)[6];
+        });
+
+        builder.withExtractor("account_id", (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
+            value.isSet = 1;
+            String accountId = ((String[]) context)[3];
+            value.value = accountId.length() > 4 ? accountId.substring(accountId.length() - 4) : accountId;
+        });
 
         /**
          * TODO: The account_id field is a sensitive field, so we'd like to mask it to the last 4 before
@@ -182,7 +209,15 @@ public class ExampleRecordHandler
              value.value = accountId.length() > 4 ? accountId.substring(accountId.length() - 4) : accountId;
          });
          */
-
+        builder.withFieldWriterFactory("transaction",
+                (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
+                        (Object context, int rowNum) -> {
+                            Map<String, Object> eventMap = new HashMap<>();
+                            eventMap.put("id", Integer.parseInt(((String[])context)[4]));
+                            eventMap.put("completed", Boolean.parseBoolean(((String[])context)[5]));
+                            BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, eventMap);
+                            return true;    //we don't yet support predicate pushdown on complex types
+                        });
         /**
          * TODO: Write data for our transaction STRUCT:
          * For complex types like List and Struct, we can build a Map to conveniently set nested values
